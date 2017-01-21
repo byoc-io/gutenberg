@@ -1,0 +1,5 @@
+bin
+dist
+_output
+.mysql/
+.vscode/

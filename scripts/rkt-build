@@ -1,0 +1,13 @@
+#!/bin/bash
+
+mkdir -p _output/bin
+
+sudo rkt run \
+    --volume gutenberg,kind=host,source=$PWD \
+    --mount volume=gutenberg,target=/go/src/github.com/byoc-io/gutenberg \
+    --dns=8.8.8.8 \
+    --net=host \
+    --insecure-options=image \
+    docker://golang:1.7.4-alpine \
+    --exec=/bin/sh -- -x -c \
+    'apk add --no-cache --update alpine-sdk && cd /go/src/github.com/byoc-io/gutenberg && make release-binary'
