@@ -1,5 +1,4 @@
-bin
-dist
-_output
-.mysql/
-.vscode/
+bin/
+release/
+samples/
+vendor/

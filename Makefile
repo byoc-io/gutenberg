@@ -3,108 +3,89 @@ ORG_PATH=github.com/byoc-io
 REPO_PATH=$(ORG_PATH)/$(PROJ)
 export PATH := $(PWD)/bin:$(PATH)
 
-VERSION=$(shell ./scripts/git-version)
+VERSION ?= $(shell ./scripts/git-version)
 
-DOCKER_REPO=github.com/byoc-io/gutenberg
-DOCKER_IMAGE=$(DOCKER_REPO):$(VERSION)
+DOCKER_REPO=gutenberg
+DOCKER_IMAGE=$(PROJ)
 
 $( shell mkdir -p bin )
-$( shell mkdir -p _output/images )
-$( shell mkdir -p _output/bin )
+$( shell mkdir -p release/bin )
+$( shell mkdir -p release/images )
 
 user=$(shell id -u -n)
 group=$(shell id -g -n)
 
 export GOBIN=$(PWD)/bin
 # Prefer ./bin instead of system packages for things like protoc, where we want
-# to use the version gutenberg uses, not whatever a developer has installed.
+# to use the version orchestra uses, not whatever a developer has installed.
 export PATH=$(GOBIN):$(shell printenv PATH)
 export GO15VENDOREXPERIMENT=1
 
 LD_FLAGS="-w -X $(REPO_PATH)/version.Version=$(VERSION)"
 
-build: bin/gutenberg
+build: clean bin/gutenberg
 
 bin/gutenberg: check-go-version
+	@echo "Building gutenberg"
 	@go install -v -ldflags $(LD_FLAGS) $(REPO_PATH)/cmd/gutenberg
 
 .PHONY: release-binary
 release-binary:
-	@go build -o _output/bin/gutenberg -v -ldflags $(LD_FLAGS) $(REPO_PATH)/cmd/gutenberg
+	@echo "Releasing binary files"
+	@go build -race -o release/bin/gutenberg -v -ldflags $(LD_FLAGS) $(REPO_PATH)/cmd/gutenberg
 
 .PHONY: revendor
 revendor:
 	@glide up -v
-	@glide-vc --use-lock-file --no-tests --only-code
+	# glide-vc --use-lock-file --no-tests --only-code
 
 test:
-	@go test -v -i $(shell go list ./... | grep -v '/vendor/')
-	@go test -v $(shell go list ./... | grep -v '/vendor/')
+	@echo "Testing"
+	@go test -v -cover -i $(shell go list ./... | grep -v '/vendor/')
+	@go test -v -cover $(shell go list ./... | grep -v '/vendor/')
 
 testrace:
-	@go test -v -i --race $(shell go list ./... | grep -v '/vendor/')
-	@go test -v --race $(shell go list ./... | grep -v '/vendor/')
+	@echo "Testing with race detection"
+	@go test -v -cover -i --race $(shell go list ./... | grep -v '/vendor/')
+	@go test -v -cover --race $(shell go list ./... | grep -v '/vendor/')
 
 vet:
+	@echo "Running go tool vet on packages"
 	@go vet $(shell go list ./... | grep -v '/vendor/')
 
 fmt:
+	@echo "Running gofmt on package sources"
 	@go fmt $(shell go list ./... | grep -v '/vendor/')
 
 lint:
+	@echo "lint"
 	@for package in $(shell go list ./... | grep -v '/vendor/' | grep -v '/api' | grep -v '/server/internal'); do \
       golint -set_exit_status $$package $$i || exit 1; \
 	done
 
-_output/bin/gutenberg:
-	# Using rkt to build the gutenberg binary.
-	@./scripts/rkt-build
-	@sudo chown $(user):$(group) _output/bin/gutenberg
-
-_output/images/library-alpine-3.4.aci:
-	@mkdir -p _output/images
-	# Using docker2aci to get a base ACI to build from.
-	@docker2aci docker://alpine:3.4
-	@mv library-alpine-3.4.aci _output/images/library-alpine-3.4.aci
-
-.PHONY: aci
-aci: clean-release _output/bin/gutenberg _output/images/library-alpine-3.4.aci
-	# Using acbuild to build a application container image.
-	@sudo ./scripts/build-aci ./_output/images/library-alpine-3.4.aci
-	@sudo chown $(user):$(group) _output/images/gutenberg.aci
-	@mv _output/images/gutenberg.aci _output/images/gutenberg-$(VERSION)-linux-amd64.aci
-
 .PHONY: docker-image
-docker-image: clean-release _output/bin/gutenberg
-	@sudo docker build -t $(DOCKER_IMAGE) .
+docker-image: clean
+	@echo "Building $(DOCKER_IMAGE):build image"
+	@docker build -t $(DOCKER_IMAGE):build --rm -f Dockerfile-build .
 
-.PHONY: proto
-proto: api/api.pb.go server/internal/types.pb.go
+	@echo "Compiling binary files with Docker"
+	@docker run --rm -v $(PWD)/release/bin:/go/src/$(REPO_PATH)/release/bin $(DOCKER_IMAGE):build
 
-api/api.pb.go: api/api.proto bin/protoc bin/protoc-gen-go
-	@protoc --go_out=plugins=grpc:. api/*.proto
-
-server/internal/types.pb.go: server/internal/types.proto bin/protoc bin/protoc-gen-go
-	@protoc --go_out=. server/internal/*.proto
-
-bin/protoc: scripts/get-protoc
-	@./scripts/get-protoc bin/protoc
-
-bin/protoc-gen-go:
-	@go install -v $(REPO_PATH)/vendor/github.com/golang/protobuf/protoc-gen-go
+	@echo "Building $(DOCKER_IMAGE) image"
+	@docker build -t $(DOCKER_IMAGE) --rm -f Dockerfile .
 
 .PHONY: check-go-version
 check-go-version:
+	@echo "Checking Golang version"
 	@./scripts/check-go-version
 
-clean: clean-release
-	@rm -rf bin/
+.PHONY: clean
+clean:
+	@echo "Cleaning Binary Folders"
+	@rm -rf bin/*
+	@rm -rf release/*
 
-.PHONY: clean-release
-clean-release:
-	@rm -rf _output/
-
-testall: testrace vet fmt lint
+testall: testrace vet fmt # lint
 
 FORCE:
 

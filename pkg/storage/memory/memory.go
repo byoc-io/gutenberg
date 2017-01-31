@@ -2,14 +2,25 @@ package memory
 
 import (
 	"github.com/byoc-io/gutenberg/pkg/model"
+	"github.com/byoc-io/gutenberg/pkg/storage"
 	"github.com/byoc-io/gutenberg/pkg/util"
 	"sync"
 )
 
-// New returns an in memory storage
 type repository struct {
 	mtx   sync.RWMutex
 	posts map[string]*model.Post
+}
+
+func (r *repository) ListPosts(pagination *storage.Pagination) ([]*model.Post, error) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	posts := []*model.Post{}
+	for _, p := range r.posts {
+		posts = append(posts, p)
+	}
+
+	return posts, nil
 }
 
 func (r *repository) GetPost(key string) (*model.Post, error) {
@@ -19,24 +30,40 @@ func (r *repository) GetPost(key string) (*model.Post, error) {
 		return val, nil
 	}
 
-	return nil, model.ErrUnknown
+	return nil, storage.ErrNotFound
 }
 
-func (r *repository) CreatePost(post *model.Post) (*model.Post, error) {
+func (r *repository) InsertPost(post *model.Post) error {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	id := util.NewUUID()
 	post.ID = id
 	r.posts[id] = post
-	return post, nil
+	return nil
+}
+
+func (r *repository) UpdatePost(post *model.Post) error {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	post, ok := r.posts[post.ID]
+	if !ok {
+		return storage.ErrNotFound
+	}
+
+	r.posts[post.ID] = post
+	return nil
+}
+
+func (r *repository) HealthCheck() error {
+	return nil
 }
 
 func (r *repository) String() string {
 	return "in-memory storage"
 }
 
-// NewPostRepository
-func NewRepository() model.Repository {
+// NewRepository returns an in memory repository.
+func NewRepository() storage.Repository {
 	posts := make(map[string]*model.Post)
 	return &repository{
 		posts: posts,

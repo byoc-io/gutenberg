@@ -1,0 +1,8 @@
+samples/
+
+.idea
+.project
+.settings
+.vscode
+
+*.log

@@ -1,0 +1,18 @@
+FROM golang:1.8.1-stretch
+MAINTAINER Daniel Negri <danielnegri@byoc.io>
+
+RUN apt-get update && apt-get install -y build-essential ca-certificates git-core \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl https://glide.sh/get | sh
+
+COPY . /go/src/github.com/byoc-io/gutenberg
+WORKDIR /go/src/github.com/byoc-io/gutenberg
+
+RUN go get -u -v github.com/golang/lint/golint
+RUN go get -u -v github.com/sgotti/glide-vc
+RUN make revendor
+RUN make testall
+RUN make build
+
+CMD ["make", "release-binary"]
